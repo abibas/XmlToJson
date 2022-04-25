@@ -15,27 +15,34 @@
 class XmlJsonParser
 {
 public:
+    //**********************************************************
+    //                  Import file
+    //**********************************************************
     //read json file to a QVariantMap
     static QVariant readJson(const QString in_file);
 
     //read xml file to TiXmlNode
-    static TiXmlHandle readXml(const QString in_file);
+    static TiXmlDocument readXml(const QString in_file);
 
-    //write json file from a QVariantMap
-    static int writeJson(const QString out_file, const QVariant json_tree);
-
-    //write the content of TiXmlDocument to a Xml file
-    static int writeXml(const QString out_file, TiXmlDocument xml_tree);
-
+    //**********************************************************
+    //                    Convert
+    //**********************************************************
     //convert a QVariant-based structure to write-ready TiXmlDocument structure
-    static int convertJsonToXml(const QVariant json_tree, TiXmlNode* xml_tree);
+    static void convertJsonToXml(const QVariant& json_tree, TiXmlElement *xml_tree);
 
     //convert from xml structure to QVarant-based Json
-    static int convertXmltoJson(const TiXmlHandle& xml_tree, QVariant& json_tree);
-private:
-    //read json file to a QString
-    static QString readJsonFile(const QString in_file);
+    static void convertXmltoJson(TiXmlDocument& xml_doc, QVariant &json_tree);
+    static void convertXmltoJson(const TiXmlHandle& xml_tree, QVariant& json_tree);
 
+    //**********************************************************
+    //                  Export file
+    //**********************************************************
+    //write json file from a QVariantMap
+    static bool writeJson(const QString out_file, const QVariant json_tree);
+    //write the content of TiXmlDocument to a Xml file
+    static void writeXml(const QString out_file, TiXmlElement *xml_tree);
+    //write the content of TiXmlDocument to a Xml file
+    static void generateStringFromXml(QString& result_string, TiXmlElement *xml_tree);
 };
 
 #endif //_XMLJSONPARSER_H_

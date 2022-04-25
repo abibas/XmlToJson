@@ -7,17 +7,27 @@
 
 using namespace QtJson;
 
+//**********************************************************
+//                  Import file
+//**********************************************************
 //read Json file to QVariant
 QVariant XmlJsonParser::readJson(const QString in_file)
 {
     QVariant json_tree;
-    //read file to QString
-    QString json = readJsonFile(in_file);
+    QFile f(in_file);
+    if (!f.open(QFile::ReadOnly | QFile::Text)) {
+        qFatal("Cannot open the json file!");
+        return json_tree;
+    }
+
+    QTextStream in(&f);
+    QString json = in.readAll();
 
     if (json.size() == 0){ //empty string
         qDebug() << "Empty string. Returning...";
         return QVariant(); //return nothing
     }
+
     //parse the json sequence
     json_tree = Json::parse(json);
 
@@ -25,54 +35,91 @@ QVariant XmlJsonParser::readJson(const QString in_file)
 }
 
 //read Xml file to TiXmlNode
-TiXmlHandle XmlJsonParser::readXml(const QString in_file)
+TiXmlDocument XmlJsonParser::readXml(const QString in_file)
 {
     TiXmlDocument doc(in_file.toStdString().c_str());
 
     if (!doc.LoadFile()) {
         qFatal("Couldn't load XML file!");
-        return 0;
     }
-
-    TiXmlHandle xml_tree(&doc);
-
-    return xml_tree;
+    return doc;
 }
+//**********************************************************
+//          END OF  Import file
+//**********************************************************
 
-int XmlJsonParser::writeJson(const QString out_file, const QVariant json_tree)
+//**********************************************************
+//                  Export file
+//**********************************************************
+bool XmlJsonParser::writeJson(const QString out_file, const QVariant json_tree)
 {
     QByteArray json_content = Json::serialize(json_tree);
 
     //write to file
     QFile json_out(out_file);
-    json_out.open(QIODevice::WriteOnly);
-    json_out.write(json_content);
-    json_out.close();
+    if ( json_out.open(QIODevice::WriteOnly) ){
+        json_out.write(json_content);
+        json_out.close();
+        return true;
+    }
+    return false;
 }
 
 //write the content of TiXmlDocument to a Xml file
-int XmlJsonParser::writeXml(const QString out_file, TiXmlDocument xml_tree)
+void XmlJsonParser::writeXml(const QString out_file, TiXmlElement* xml_tree)
 {
+    //add xml file declaration
+    TiXmlDocument doc;
     TiXmlDeclaration* decl = new TiXmlDeclaration( "1.0", "", "" );
-
-    //add declartion to the beginning of the file
-    //xml_tree.InsertBeforeChild(xml_tree.FirstChild(), decl);
+    doc.LinkEndChild( decl );
 
     //get generation's timestamp
     QString cur_time = QDateTime::currentDateTime().toLocalTime().toString();
 
-    //add generatation timestamp as a comment after the declaration
+    //add generatation timestamp as a comment
     TiXmlComment * comment = new TiXmlComment();
     comment->SetValue("Generated at " + cur_time.toStdString());
-    //xml_tree.InsertAfterChild(xml_tree.FirstChild(), comment);
+    doc.LinkEndChild(comment);
+
+    //traverse through the root tree and append each element to the Doc
+    TiXmlElement* child_element = xml_tree->FirstChildElement();
+    while(child_element){
+        //link to the clone of the node
+        //since it does not allow multi-parents for a node (see the assert)
+        //assert( node->parent == 0 || node->parent == this );
+        doc.LinkEndChild(child_element->Clone());
+        child_element = child_element->NextSiblingElement();
+    }
 
     //save to file
-    xml_tree.SaveFile(out_file.toStdString());
-
-    return 1;
+    doc.SaveFile(out_file.toStdString());
 }
 
-int XmlJsonParser::convertXmltoJson(const TiXmlHandle& xml_tree, QVariant &json_tree)
+void XmlJsonParser::generateStringFromXml(QString& result_string, TiXmlElement *xml_tree){
+    TiXmlDocument doc;
+    TiXmlElement* child_element = xml_tree->FirstChildElement();
+    while(child_element){
+        doc.LinkEndChild(child_element->Clone());
+        child_element = child_element->NextSiblingElement();
+    }
+
+    TiXmlPrinter printer;
+    doc.Accept(&printer);
+    result_string = printer.CStr();
+}
+//**********************************************************
+//        END OF    Export file
+//**********************************************************
+
+//**********************************************************
+//                    Convert
+//**********************************************************
+void XmlJsonParser::convertXmltoJson(TiXmlDocument& xml_doc, QVariant &json_tree){
+    TiXmlHandle xml_tree(&xml_doc);
+    convertXmltoJson(xml_tree, json_tree);
+}
+
+void XmlJsonParser::convertXmltoJson(const TiXmlHandle& xml_tree, QVariant &json_tree)
 {
     //loop over all branches of xml_tree and append it to QVariantMap
     TiXmlHandle cur_handle = xml_tree.FirstChildElement();
@@ -133,75 +180,18 @@ int XmlJsonParser::convertXmltoJson(const TiXmlHandle& xml_tree, QVariant &json_
 }
 
 //convert a QVariant-based structure to write-ready TiXmlDocument structure
-int XmlJsonParser::convertJsonToXml(const QVariant json_tree, TiXmlNode* xml_tree)
-{
-    /*
-    //loop over all elements in json_tree and append it to xml_tree
-    if (json_tree.type() == QVariant::List || json_tree.type() == QVariant::StringList){ //a list
-        QVariantList cur_node = json_tree.toList();
-        QVariantList::iterator iter = cur_node.begin();
-        while(iter!=cur_node.end()){
-
-            ++iter;
-        }
-    } else if (json_tree.type == QVariant::Map) {
-
-    } else if((data.type() == QVariant::String) || (data.type() == QVariant::ByteArray)){ // a string or a byte array?
-                  str = sanitizeString(data.toString()).toUtf8();
-    } else if(data.type() == QVariant::Double) {
-        str = QByteArray::number(data.toDouble());
-        if(!str.contains(".") && ! str.contains("e"))
-        {
-            str += ".0";
-        }
-    }else if (data.type() == QVariant::Bool){ // boolean value?
-        str = data.toBool() ? "true" : "false";
-    } else if (data.type() == QVariant::ULongLong){ // large unsigned number?
-                str = QByteArray::number(data.value<qulonglong>());
-    } else if ( data.canConvert<qlonglong>() ){ // any signed number?
-
-                str = QByteArray::number(data.value<qlonglong>());
-    } else if (data.canConvert<long>()) {
-                str = sanitizeString(QString::number(data.value<long>())).toUtf8();
-    } else if (data.canConvert<QString>()) { // can value be converted to string?
-                // this will catch QDate, QDateTime, QUrl, ...
-                str = sanitizeString(data.toString()).toUtf8();
-    } else {
-        qFatal("Invalid structure type!");
-        return 0;
-    }
-
-    */
-    return 1;
-}
-
-// read json file to a QString
-QString XmlJsonParser::readJsonFile(const QString in_file) {
-    QFile f(in_file);
-    if (!f.open(QFile::ReadOnly | QFile::Text)) {
-        qFatal("Cannot open the json file!");
-        return QString();
-    } else {
-        QTextStream in(&f);
-        return in.readAll();
-    }
-}
-
-/** convert from tree-like QVariant structure to TiXmlHandle structure
- *
- **/
-void mapQVariantToXML(const QVariant qvarmap_tree, TiXmlElement* xml_tree)
+void XmlJsonParser::convertJsonToXml(const QVariant& json_tree, TiXmlElement* xml_tree)
 {
     bool is_QMap = false, is_QList = false;
     QVariantMap cur_map;
     QVariantList cur_list;
     //check if the QVariant is a QList or QMap
-    if (qvarmap_tree.userType() == QVariant::Map){ //It's a QVariantMap
+    if (json_tree.userType() == QVariant::Map){ //It's a QVariantMap
         is_QMap = true;
-        cur_map = qvarmap_tree.toMap();
-    } else if (qvarmap_tree.userType() == QVariant::List){ //It's a QVariantList
+        cur_map = json_tree.toMap();
+    } else if (json_tree.userType() == QVariant::List){ //It's a QVariantList
         is_QList = true;
-        cur_list = qvarmap_tree.toList();
+        cur_list = json_tree.toList();
     } else {
         qFatal("Invalid QVariant type");
         return;
@@ -224,7 +214,7 @@ void mapQVariantToXML(const QVariant qvarmap_tree, TiXmlElement* xml_tree)
                 child_element->LinkEndChild( text);
             } else {
                 //find the child element
-                mapQVariantToXML(cur_value, child_element);
+                convertJsonToXml(cur_value, child_element);
             }
         }
     } else if (is_QList) { //is_QList
@@ -246,7 +236,7 @@ void mapQVariantToXML(const QVariant qvarmap_tree, TiXmlElement* xml_tree)
                 child_element->LinkEndChild( text);
             } else {
                 //find the child element
-                mapQVariantToXML(cur_value, child_element);
+                convertJsonToXml(cur_value, child_element);
             }
         }
     } else {
@@ -254,3 +244,6 @@ void mapQVariantToXML(const QVariant qvarmap_tree, TiXmlElement* xml_tree)
         return;
     }
 }
+//**********************************************************
+//           END OF    Convert
+//**********************************************************
